@@ -1,0 +1,273 @@
+-- Agnes He
+-- Data Challenge
+-- March 8, 2020
+
+--Step 1: Explore the database, tables, and relations.
+
+-- (SQL Script)
+SELECT *
+FROM public.business_group LIMIT 100;
+
+SELECT *
+FROM public.message LIMIT 100;
+
+SELECT *
+FROM public.promotion LIMIT 100;
+
+SELECT *
+FROM public.perk LIMIT 100;
+
+-- Question 1.1: What is the time period covered by the data? Is the entire time window usable? If so why? If not, why not?
+
+-- The min pre_issue_last_visited_datetime appears to be in the year 1970, which is clearly an incorrect data, so I wrote a query to find out the correct date time.
+-- The time range covered by the data is from 2011-03-09 to 2018-06-12 over the whole dataset.
+-- Only the time window
+
+-- (SQL Script)
+
+SELECT min(pre_issue_last_visited_datetime) AS pre_min,
+       max(pre_issue_last_visited_datetime) AS pre_max,
+       min(issued_datetime) AS issue_min,
+       max(issued_datetime) AS issue_max,
+       min(claimed_datetime) AS claim_min,
+       max(claimed_datetime) AS claim_max,
+       min(next_visited_datetime) AS next_min,
+       max(next_visited_datetime) AS next_max,
+       min(redeemed_datetime) AS red_min,
+       max(redeemed_datetime) AS red_max
+FROM public.message
+WHERE pre_issue_last_visited_datetime >
+    (SELECT min(pre_issue_last_visited_datetime)
+     FROM public.message);
+
+
+-- Question 1.2: Are there any data quality issues?
+
+-- --Check the data anomalies and outliers, first count how many claim datetime is before issued datetime
+
+-- --(SQL Script)
+
+SELECT count(1)
+FROM public.message
+WHERE claimed_datetime < issued_datetime;
+
+-- missing info in business_groups and promotion
+-- there are 675 business groups are not in the business table
+
+-- --(SQL Script)
+
+SELECT count(distinct m.business_group_id)
+FROM public.message m
+left join public.business_group b
+  ON m.business_group_id = b.id
+WHERE b.id is NULL
+  SELECT count(1),
+         campaign_name
+  FROM public.message
+GROUP BY campaign_name;
+
+-- Question 2: What are the metrics that you would use to evaluate the effectiveness of the messaging campaigns? What are the advantages/disadvantages of each?
+-- -- Claim rate: Measure the number of rewards claimed by consumers as a percentage of the number distributed.
+
+-- --(SQL Script)
+
+SELECT round(100*claimed::numeric/total::numeric,2) AS claim_rate
+FROM
+  (SELECT count(claimed_datetime) AS claimed,
+          count(1) AS total
+   FROM public.message);
+
+-- -- Redemption rate: Measure the number of promotions converted to purchases expressed as a percentage of the number distributed.
+
+-- --(SQL Script)
+SELECT round(100*redeemed::numeric/total::numeric,2) AS redemption_rate
+FROM
+  (SELECT count(redeemed_datetime) AS redeemed,
+          count(1) AS total
+   FROM public.message);
+
+-- Question 3: Look at effectiveness (as defined by the metric(s) you defined above) as a function of the following variables (both independently and jointly). What do you see? What do you think is driving the distributions you see? What are your recommendations based on what you see?
+
+-- --Campaign Type and Campaign Name
+
+-- --Count for campaign_names
+
+-- --(SQL Script)
+
+SELECT count(1),
+       campaign_name
+FROM public.message
+GROUP BY campaign_name;
+
+-- -- Count for campaign_types
+
+-- --(SQL Script)
+
+SELECT count(1),
+       campaign_type
+FROM public.message
+GROUP BY campaign_type;
+
+-- -- Get the metrics for campaign name
+
+-- --(SQL Script)
+
+SELECT count(1) AS total,
+       count(redeemed_datetime) AS redeemed,
+       round(100*redeemed::numeric/total::numeric,2) AS redemption_rate,
+       count(claimed_datetime) AS claimed,
+       round(100*claimed::numeric/total::numeric,2) AS claim_rate,
+       count(next_visited_datetime) AS next_visited,
+       round(100*next_visited::numeric/total::numeric,2) AS next_visit_rate,
+       campaign_name
+FROM public.message
+GROUP BY campaign_name;
+
+-- -- Get the metrics for campaign types
+
+-- --(SQL Script)
+
+SELECT count(1) AS total,
+       count(redeemed_datetime) AS redeemed,
+       round(100*redeemed::numeric/total::numeric,2) AS redemption_rate,
+       count(claimed_datetime) AS claimed,
+       round(100*claimed::numeric/total::numeric,2) AS claim_rate,
+       count(next_visited_datetime) AS next_visited,
+       round(100*next_visited::numeric/total::numeric,2) AS next_visit_rate,
+       campaign_type
+FROM public.message
+GROUP BY campaign_type;
+
+-- -- Days from last visit to message send
+
+-- -- Get the max, min, and mean for days from last visit to message send for the claimed offers.
+
+-- --(SQL Script)
+
+SELECT max(sub.lag),
+      min(sub.lag), avg(sub.lag)
+FROM
+  (SELECT *,
+          datediff(day, pre_issue_last_visited_datetime, issued_datetime) AS lag
+  FROM public.message
+  WHERE pre_issue_last_visited_datetime is not null and pre_issue_last_visited_datetime > '1970-10-09 01:38:27') sub
+WHERE sub.claimed_datetime is not null;
+
+-- -- Get the max, min, and mean for days from last visit to message send for the redeemed offers.
+
+-- --(SQL Script)
+
+SELECT max(sub.lag),
+       min(sub.lag), avg(sub.lag)
+FROM
+  (SELECT *,
+          datediff(day, pre_issue_last_visited_datetime, issued_datetime) AS lag
+  FROM public.message
+  WHERE pre_issue_last_visited_datetime is not null and pre_issue_last_visited_datetime > '1970-10-09 01:38:27') sub
+WHERE sub.redeemed_datetime is not null;
+
+-- --Message Channel
+
+-- --I calculated the metrics for three message channel: sms, email, push
+
+-- --(SQL Script)
+
+SELECT count(1) AS total,
+       count(redeemed_datetime) AS redeemed,
+       round(100*redeemed::numeric/total::numeric,2) AS redemption_rate,
+       count(claimed_datetime) AS claimed,
+       round(100*claimed::numeric/total::numeric,2) AS claim_rate,
+       count(next_visited_datetime) AS next_visited,
+       round(100*next_visited::numeric/total::numeric,2) AS next_visit_rate,
+       message_channel
+FROM public.message
+GROUP BY message_channel;
+
+-- Perk ‘Days Active’ or effective duration of the promotion
+
+-- -- the active days are the difference of promotion start date and promotion expiration date,
+-- -- alternatively this information can be extracted from the perk table
+-- -- then I calculated the metrics for the perk actives days
+
+-- --(SQL Script)
+
+SELECT count(1) AS total,
+       count(sub.redeemed_datetime) AS redeemed,
+       round(100*redeemed::numeric/total::numeric,2) AS redemption_rate,
+       count(sub.claimed_datetime) AS claimed,
+       round(100*claimed::numeric/total::numeric,2) AS claim_rate,
+       count(sub.next_visited_datetime) AS next_visited,
+       round(100*next_visited::numeric/total::numeric,2) AS next_visit_rate,
+       sub.days_active
+FROM (SELECT *, datediff(day, promotion_start_date, promotion_expiration_date) AS days_active
+FROM public.message) sub
+GROUP BY sub.days_active;
+
+-- Day-of-week when the message was sent
+
+-- -- I extracted the day of week from the datetime of issued datetime,
+-- -- then labeled them using the weekday names in strings
+-- -- then I calculated the metrics for day of week
+
+-- (SQL Script)
+
+SELECT count(1) AS total,
+       count(sub.redeemed_datetime) AS redeemed,
+       round(100*redeemed::numeric/total::numeric,2) AS redemption_rate,
+       count(sub.claimed_datetime) AS claimed,
+       round(100*claimed::numeric/total::numeric,2) AS claim_rate,
+       count(sub.next_visited_datetime) AS next_visited,
+       round(100*next_visited::numeric/total::numeric,2) AS next_visit_rate,
+      (CASE
+            WHEN sub.day_of_week = 0 then 'Sunday'
+            WHEN sub.day_of_week = 1 then 'Monday'
+            WHEN sub.day_of_week = 2 then 'Tuesday'
+            WHEN sub.day_of_week = 3 then 'Wednesday'
+            WHEN sub.day_of_week = 4 then 'Thursday'
+            WHEN sub.day_of_week = 5 then 'Friday'
+            ELSE 'Satuarday'
+            END) as day_of_week
+FROM
+  (SELECT *,
+          datepart(dw, issued_datetime) AS day_of_week
+   FROM public.message) sub
+GROUP BY sub.day_of_week
+ORDER BY sub.day_of_week;
+
+-- Extra credit: offer message
+
+-- --based on the context of the perks' shortname,
+-- --I grouped the perks into 4 types: buy then get, free item, price off, and others
+-- --Then I calculated the metrics by perk types
+
+-- -- (SQL Script)
+
+WITH msg as(select m.*, sub.*
+FROM public.message m
+left join (select p.id, pk.days_active, pk.shortname
+          from public.promotion p
+          left join public.perk pk
+          on p.perk_id = pk.id) sub
+ON m.promotion_id = sub.id)
+
+SELECT count(1) AS total,
+       count(sub.redeemed_datetime) AS redeemed,
+       round(100*redeemed::numeric/total::numeric,2) AS redemption_rate,
+       count(sub.claimed_datetime) AS claimed,
+       round(100*claimed::numeric/total::numeric,2) AS claim_rate,
+       count(sub.next_visited_datetime) AS next_visited,
+       round(100*next_visited::numeric/total::numeric,2) AS next_visit_rate,
+       sub.perk_type
+FROM (select *, (case when shortname ilike '%Buy%' then 'Buy then get'
+            when shortname ilike '%Free%' then 'free item'
+            when shortname ilike '%off%' then 'Price Off'
+            else 'others' end) as perk_type
+            from msg) sub
+GROUP BY sub.perk_type;
+
+
+
+
+
+
+
